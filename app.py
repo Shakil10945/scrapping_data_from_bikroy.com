@@ -1,83 +1,55 @@
-from flask import Flask, render_template, request,jsonify
-from flask_cors import CORS,cross_origin
+from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS, cross_origin
 import requests
-from bs4 import BeautifulSoup as bs
-from urllib.request import urlopen as uReq
+import time
 
 app = Flask(__name__)
+CORS(app)
 
-@app.route('/',methods=['GET'])  # route to display the home page
+@app.route('/', methods=['GET'])
 @cross_origin()
 def homePage():
     return render_template("index.html")
 
-@app.route('/review',methods=['POST','GET']) # route to show the review comments in a web UI
+@app.route('/review', methods=['GET'])
 @cross_origin()
 def index():
-    if request.method == 'POST':
+    # Use GET for the form submission
+    if request.method == 'GET':
         try:
-            searchString = request.form['content'].replace(" ","")
-            flipkart_url = "https://www.flipkart.com/search?q=" + searchString
-            uClient = uReq(flipkart_url)
-            flipkartPage = uClient.read()
-            uClient.close()
-            flipkart_html = bs(flipkartPage, "html.parser")
-            bigboxes = flipkart_html.findAll("div", {"class": "_1AtVbE col-12-12"})
-            del bigboxes[0:3]
-            box = bigboxes[0]
-            productLink = "https://www.flipkart.com" + box.div.div.div.a['href']
-            prodRes = requests.get(productLink)
-            prodRes.encoding='utf-8'
-            prod_html = bs(prodRes.text, "html.parser")
-            print(prod_html)
-            commentboxes = prod_html.find_all('div', {'class': "_16PBlm"})
+            searchString = request.args.get('content').replace(" ", "+")  # Get the query parameter from GET request
+            reviews = []  # Initialize an empty list for reviews
 
-            filename = searchString + ".csv"
-            fw = open(filename, "w")
-            headers = "Product, Customer Name, Rating, Heading, Comment \n"
-            fw.write(headers)
-            reviews = []
-            for commentbox in commentboxes:
-                try:
-                    #name.encode(encoding='utf-8')
-                    name = commentbox.div.div.find_all('p', {'class': '_2sc7ZR _2V5EHH'})[0].text
+            for page in range(1,2):  # Loop through multiple pages
+                url = f'https://bikroy.com/data/serp?top_ads=2&spotlights=5&sort=relevance&buy_now=0&urgent=0&categorySlug=mobiles&locationSlug=bangladesh&category=101&query={searchString}&page={page}&filter_json=[]'
+                
+                req = requests.get(url)
+                time.sleep(3)  # Add delay to avoid overloading the server
+                response = req.json()
 
-                except:
-                    name = 'No Name'
+                print(f"Page {page} done")
 
-                try:
-                    #rating.encode(encoding='utf-8')
-                    rating = commentbox.div.div.div.div.text
+                for product in range(0, 25):
+                    try:
+                        price = response['ads'][product]['price']
+                    except KeyError:
+                        price = "Not Available"
 
+                    data_json = {
+                        'Product': response['ads'][product]['title'],
+                        'Name': response['ads'][product]['title'],
+                        'Rating':3,
+                        'CommentHead': response['ads'][product]['description'],
+                        'Comment': price
+                    }
+                    reviews.append(data_json)  # Append the data to the reviews list
 
-                except:
-                    rating = 'No Rating'
-
-                try:
-                    #commentHead.encode(encoding='utf-8')
-                    commentHead = commentbox.div.div.div.p.text
-
-                except:
-                    commentHead = 'No Comment Heading'
-                try:
-                    comtag = commentbox.div.div.find_all('div', {'class': ''})
-                    #custComment.encode(encoding='utf-8')
-                    custComment = comtag[0].div.text
-                except Exception as e:
-                    print("Exception while creating dictionary: ",e)
-
-                mydict = {"Product": searchString, "Name": name, "Rating": rating, "CommentHead": commentHead,
-                          "Comment": custComment}
-                reviews.append(mydict)
-            return render_template('results.html', reviews=reviews[0:(len(reviews)-1)])
+            return render_template('results.html', reviews=reviews)
         except Exception as e:
-            print('The Exception message is: ',e)
-            return 'something is wrong'
-    # return render_template('results.html')
-
+            print('The Exception message is:', e)
+            return f'Something is wrong: {str(e)}'
     else:
         return render_template('index.html')
 
 if __name__ == "__main__":
-    #app.run(host='127.0.0.1', port=8001, debug=True)
-	app.run(debug=True)
+    app.run(debug=True)
